@@ -28,7 +28,7 @@ using namespace mlir;
 // Type of kernel to be generated
 llvm::cl::opt<std::string> kernel("kernel",
                                   llvm::cl::desc("Kernel to be generated"),
-                                  llvm::cl::value_desc("mlp,matmul,fc"),
+                                  llvm::cl::value_desc("mlp,matmul,fc,mha"),
                                   llvm::cl::init("mlp"));
 
 // Input layer
@@ -65,14 +65,21 @@ llvm::cl::opt<std::string> filename("o", llvm::cl::desc("Output filename"),
                                     llvm::cl::init("-"));
 
 // Enable softmax at the last layer
-llvm::cl::opt<bool> enableSoftmax("softmax", llvm::cl::desc("Enable softmax"),
+llvm::cl::opt<bool> enableSoftmax("softmax",
+                                  llvm::cl::desc("Enable softmax for MLP/FC"),
                                   llvm::cl::value_desc("bool"),
                                   llvm::cl::init(false));
 
 // Initialize accumulation matrix with bias
-llvm::cl::opt<bool> biasAcc("bias-acc", llvm::cl::desc("Accumulate on bias"),
+llvm::cl::opt<bool> biasAcc("bias-acc",
+                            llvm::cl::desc("Accumulate on bias on MLP/FC"),
                             llvm::cl::value_desc("bool"),
                             llvm::cl::init(false));
+
+// Number of heads in MHA
+llvm::cl::opt<int> heads("heads",
+                         llvm::cl::desc("Number of heads for MHA (default 1)"),
+                         llvm::cl::init(1));
 
 // Set VNNI packing factor for BF16
 llvm::cl::opt<int>
@@ -89,6 +96,6 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv, "MLIR Generator");
 
   MLIRGenerator gen(kernel, miniBatch, layers, tiles, floatWidth, seed,
-                    enableSoftmax, biasAcc, vnni);
+                    enableSoftmax, biasAcc, vnni, heads);
   return gen.generate(filename);
 }

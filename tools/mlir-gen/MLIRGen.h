@@ -69,13 +69,16 @@ class MLIRGenerator {
   bool biasAcc;
 
   /// List of supported kernel types that can be generated
-  enum class KernelType { MLP, MATMUL, FULLY_CONNECTED };
+  enum class KernelType { MHA, MLP, MATMUL, FULLY_CONNECTED };
 
   /// Type of kernel to be generated
   KernelType kernelType;
 
   /// VNNI packing factor
   int vnniFactor;
+
+  /// MHA number of heads
+  int heads;
 
   // ============================ Helpers
 
@@ -149,6 +152,9 @@ class MLIRGenerator {
   /// Classifies the output of the last layer and put it in the second argumnent
   Value createOutputLayer(Value, Value);
 
+  /// Creates an MHA kernel
+  void createMhaKernel();
+
   /// Creates an MLP kernel
   void createMlpKernel();
 
@@ -168,7 +174,7 @@ public:
   /// so should create new objects to not have to share / cleanup existing MLIR
   /// modules.
   MLIRGenerator(StringRef, unsigned, StringRef, StringRef, unsigned, int, bool,
-                bool, int);
+               bool, int, int);
 
   ~MLIRGenerator() { module->destroy(); }
 

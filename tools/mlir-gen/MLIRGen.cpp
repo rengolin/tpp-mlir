@@ -68,12 +68,12 @@ SmallVector<int64_t> getMatMulResultShape(ShapedType lhs, ShapedType rhs) {
 } // anonymous namespace
 
 MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
-                             StringRef layersStr, StringRef tilesStr,
-                             unsigned typeWidth, int seed, bool enableSoftmax,
-                             bool biasAcc, int vnniBlockingFactor)
+                           StringRef layersStr, StringRef tilesStr,
+                           unsigned typeWidth, int seed, bool enableSoftmax,
+                           bool biasAcc, int vnni, int heads)
     : builder(&context), loc(builder.getUnknownLoc()), miniBatch(miniBatch),
       seed(seed), enableSoftmax(enableSoftmax), biasAcc(biasAcc),
-      vnniFactor(vnniBlockingFactor) {
+      vnniFactor(vnni), heads(heads) {
 
   // Register all necessary dialects
   context
@@ -84,6 +84,7 @@ MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
 
   // Parse kernel type
   auto optKernel = llvm::StringSwitch<std::optional<KernelType>>(kernelStr)
+                       .CaseLower("mha", KernelType::MHA)
                        .CaseLower("mlp", KernelType::MLP)
                        .CaseLower("matmul", KernelType::MATMUL)
                        .CaseLower("fc", KernelType::FULLY_CONNECTED)
@@ -231,6 +232,11 @@ std::string MLIRGenerator::createMetadata() {
   return data;
 }
 
+void MLIRGenerator::createMhaKernel() {
+  OpBuilder::InsertionGuard guard(builder);
+  assert(heads == 1 && "Multi-head not implemented yet");
+}
+
 void MLIRGenerator::createMlpKernel() {
   OpBuilder::InsertionGuard guard(builder);
 
@@ -300,6 +306,9 @@ void MLIRGenerator::createFcKernel() {
 
 void MLIRGenerator::createEntryPoint() {
   switch (kernelType) {
+  case KernelType::MHA:
+    createMhaKernel();
+    break;
   case KernelType::MLP:
     createMlpKernel();
     break;
