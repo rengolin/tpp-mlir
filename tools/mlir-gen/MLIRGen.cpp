@@ -68,9 +68,9 @@ SmallVector<int64_t> getMatMulResultShape(ShapedType lhs, ShapedType rhs) {
 } // anonymous namespace
 
 MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
-                           StringRef layersStr, StringRef tilesStr,
-                           unsigned typeWidth, int seed, bool enableSoftmax,
-                           bool biasAcc, int vnni, int heads)
+                             StringRef layersStr, StringRef tilesStr,
+                             unsigned typeWidth, int seed, bool enableSoftmax,
+                             bool biasAcc, int vnni, int heads)
     : builder(&context), loc(builder.getUnknownLoc()), miniBatch(miniBatch),
       seed(seed), enableSoftmax(enableSoftmax), biasAcc(biasAcc),
       vnniFactor(vnni), heads(heads) {
@@ -141,7 +141,7 @@ MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
   builder.setInsertionPoint(module);
 }
 
-Value MLIRGenerator::createLayer(unsigned index, Value arg) {
+Value MLIRGenerator::createFCLayer(unsigned index, Value arg) {
   assert(index < layers.size() && "out of bounds access");
   OpBuilder::InsertionGuard guard(builder);
 
@@ -163,6 +163,49 @@ Value MLIRGenerator::createLayer(unsigned index, Value arg) {
 
   // Return output tensor to the next layer
   return relu;
+}
+
+Value MLIRGenerator::createMHALayer(unsigned index, Value key, Value query,
+                                    Value value) {
+  assert(index < layers.size() && "out of bounds access");
+  OpBuilder::InsertionGuard guard(builder);
+
+  // Input to the layer is previous size
+  unsigned input = layers[index - 1];
+
+  // Output to the layer is current size
+  auto output = layers[index];
+
+  // Types: {MB, input} X {input, output} + {MB, output} -> ReLU
+  auto weightType = getShape({input, output}, PACK_WEIGHT);
+  auto outputType = getShape({miniBatch, output}, PACK_OUTPUT);
+
+  // Weights and biases
+  auto kW = createDenseTensor(builder, initType, weightType, getRand());
+  auto kB = createDenseTensor(builder, initType, outputType, getRand());
+  auto qW = createDenseTensor(builder, initType, weightType, getRand());
+  auto qB = createDenseTensor(builder, initType, outputType, getRand());
+  auto vW = createDenseTensor(builder, initType, weightType, getRand());
+  auto vB = createDenseTensor(builder, initType, outputType, getRand());
+
+  // First FC on each input
+  // TODO: Transpose query
+  key = lowerMatmul({key, kW, kB, /*output=*/nullptr});
+  query = lowerMatmul({query, qW, qB, /*output=*/nullptr});
+  value = lowerMatmul({value, vW, vB, /*output=*/nullptr});
+
+  // Multiply KeyxQuery
+  auto kq = lowerMatmul({key, query, /*bias=*/nullptr, /*output=*/nullptr});
+
+  // TODO: Divide by 1/sqrt(heads) when heads > 1
+
+  // TODO: Implement MHA softmax
+
+  // Multiply KQxValue
+  auto kqv = lowerMatmul({kq, value, /*bias=*/nullptr, /*output=*/nullptr});
+
+  // Return output tensor to the next layer
+  return kqv;
 }
 
 Value MLIRGenerator::createOutputLayer(Value arg, Value out) {
@@ -234,7 +277,33 @@ std::string MLIRGenerator::createMetadata() {
 
 void MLIRGenerator::createMhaKernel() {
   OpBuilder::InsertionGuard guard(builder);
-  assert(heads == 1 && "Multi-head not implemented yet");
+  // See below for multi-head
+  // https://github.com/plaidml/tpp-mlir/blob/main/test/Models/multi-head-attention.mlir#L102
+  assert(heads == 1 && "Multi-head transformer not implemented yet");
+  assert(layers.size() == 2 && "Multi-level transformer not implemented yet");
+
+  // First, create the kernel with the entry point name "entry"
+  // Each key/query/value into output
+  auto inputType = getShape({miniBatch, layers.front()}, PACK_INPUT);
+  auto outputType = getShape({miniBatch, layers.back()}, PACK_OUTPUT);
+  auto func = createFunction(builder, module, "entry",
+                             {inputType, inputType, inputType, outputType},
+                             {outputType});
+
+  // Now pass the input through all layers
+  // TODO: Find the right connection between layers (out -> QKV)
+  Value key = func.getArgument(0);
+  Value query = func.getArgument(1);
+  Value value = func.getArgument(2);
+  Value result = func.getArgument(3);
+  result = createMHALayer(1, key, query, value);
+
+  // Convert data to predictions
+  Value output = func.getArgument(3);
+  result = createOutputLayer(result, output);
+
+  // Data is now output
+  builder.create<func::ReturnOp>(loc, result);
 }
 
 void MLIRGenerator::createMlpKernel() {
@@ -249,7 +318,7 @@ void MLIRGenerator::createMlpKernel() {
   // Now pass the input through all layers
   Value data = func.getArgument(0);
   for (unsigned i = 1, max = layers.size() - 1; i < max; i++) {
-    data = createLayer(i, data);
+    data = createFCLayer(i, data);
   }
 
   // Convert data to predictions

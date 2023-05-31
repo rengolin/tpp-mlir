@@ -146,7 +146,10 @@ class MLIRGenerator {
 
   /// Creates a hidden layer function, to be called by the kernel
   /// There will be one per hidden layer
-  Value createLayer(unsigned, Value);
+  Value createFCLayer(unsigned, Value);
+
+  /// Creates a multi-head attention layer function, to be called by the kernel
+  Value createMHALayer(unsigned, Value, Value, Value);
 
   /// Creates an output layer function, to be called by the kernel
   /// Classifies the output of the last layer and put it in the second argumnent
