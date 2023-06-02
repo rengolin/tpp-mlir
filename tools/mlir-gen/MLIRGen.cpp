@@ -189,13 +189,13 @@ Value MLIRGenerator::createMHALayer(unsigned index, Value key, Value query,
   auto vB = createDenseTensor(builder, initType, outputType, getRand());
 
   // First FC on each input
-  // TODO: Transpose query
   key = lowerMatmul({key, kW, kB, /*output=*/nullptr});
   query = lowerMatmul({query, qW, qB, /*output=*/nullptr});
   value = lowerMatmul({value, vW, vB, /*output=*/nullptr});
 
   // Multiply KeyxQuery
-  auto kq = lowerMatmul({key, query, /*bias=*/nullptr, /*output=*/nullptr});
+  auto queryT = transpose(query);
+  auto kq = lowerMatmul({key, queryT, /*bias=*/nullptr, /*output=*/nullptr});
 
   // TODO: Divide by 1/sqrt(heads) when heads > 1
 
@@ -418,6 +418,19 @@ int MLIRGenerator::generate(StringRef filename) {
 }
 
 // ============================================= Helpers
+
+Value MLIRGenerator::transpose(Value tensor) {
+  auto type = cast<ShapedType>(tensor.getType());
+  assert(type && "Not a shaped type");
+  assert(type.getRank() == 2 && "Not a 2D shaped type");
+
+  SmallVector<int64_t> dims{type.getDimSize(1), type.getDimSize(0)};
+  SmallVector<int64_t> perm{1, 0};
+  auto empty = builder.create<tensor::EmptyOp>(loc, dims, type.getElementType())
+                   .getResult();
+  return builder.create<linalg::TransposeOp>(loc, tensor, empty, perm)
+      .getResult()[0];
+}
 
 Value MLIRGenerator::lowerMatmul(MatMulArgs args) {
   // If not using bias as accumulator, and output not provided,

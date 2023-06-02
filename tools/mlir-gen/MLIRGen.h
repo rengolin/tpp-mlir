@@ -139,6 +139,9 @@ class MLIRGenerator {
   /// Creates a softmax in the current function
   Value lowerSoftmax(Value, Value);
 
+  /// Transposes a tensor
+  Value transpose(Value);
+
   // ============================ Main API
 
   /// Creates metadata string containing run command, flops info etc.
@@ -177,7 +180,7 @@ public:
   /// so should create new objects to not have to share / cleanup existing MLIR
   /// modules.
   MLIRGenerator(StringRef, unsigned, StringRef, StringRef, unsigned, int, bool,
-               bool, int, int);
+                bool, int, int);
 
   ~MLIRGenerator() { module->destroy(); }
 
