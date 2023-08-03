@@ -106,7 +106,11 @@ class MLIRGenerator {
     MAP_MATMUL_INPUT,
     MAP_MATMUL_WEIGHT,
     MAP_MATMUL_OUTPUT,
-    MAP_MATMUL // Alias for iterator type
+    MAP_MATMUL, // Alias for iterator type
+    MAP_CONTRACTION_INPUT,
+    MAP_CONTRACTION_WEIGHT,
+    MAP_CONTRACTION_OUTPUT,
+    MAP_CONTRACTION // Alias for iterator type
   };
 
   /// Return affine map (packed if requested)
@@ -131,6 +135,7 @@ class MLIRGenerator {
     Value weight;
     Value bias;
     Value output;
+    bool contraction = false;
   };
 
   /// Creates a matmul in the current function

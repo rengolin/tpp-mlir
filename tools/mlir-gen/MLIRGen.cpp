@@ -45,16 +45,26 @@ void parseStringList(StringRef str, SmallVector<int64_t> &list) {
   }
 }
 
-SmallVector<int64_t> getMatMulResultShape(ShapedType lhs, ShapedType rhs) {
+SmallVector<int64_t> getMatMulResultShape(ShapedType lhs, ShapedType rhs,
+                                          bool contraction) {
   SmallVector<int64_t> shape;
   assert(lhs.getRank() == rhs.getRank() && "Matmul types must have same rank");
-  // M x K x N -> M x N
-  assert(lhs.getDimSize(1) == rhs.getDimSize(0) &&
-         "Incompatible matmul shapes");
-  int m = lhs.getDimSize(0);
-  shape.push_back(m);
-  int n = rhs.getDimSize(1);
-  shape.push_back(n);
+  llvm::outs() << "LHS Shape: " << lhs << "\n";
+  llvm::outs() << "RHS Shape: " << rhs << "\n";
+  if (contraction) {
+    // FIXME: This is broken
+    // BxSxMxK MxKxNxK -> BxSxMxN
+    assert(lhs.getDimSize(0) == rhs.getDimSize(0) &&
+           "Incompatible matmul shapes");
+    shape.push_back(lhs.getDimSize(1)); // m
+    shape.push_back(rhs.getDimSize(1)); // n
+  } else {
+    // MxK x KxN -> MxN
+    assert(lhs.getDimSize(1) == rhs.getDimSize(0) &&
+           "Incompatible matmul shapes");
+    shape.push_back(lhs.getDimSize(0)); // m
+    shape.push_back(rhs.getDimSize(1)); // n
+  }
 
   // Just splat high dims onto the output type
   for (int i = 2, rank = lhs.getRank(); i < rank; i++) {
@@ -199,9 +209,6 @@ Value MLIRGenerator::createMHALayer(unsigned index, Value key, Value query,
   assert((input == output && input == mhaHiddenDim) &&
          "MHA layer sizes must be the same as hidden dimension");
 
-  // Input Type: {MB, SL, heads, input/heads}
-  auto inputType =
-      getShape({miniBatch, mhaSeqLen, mhaHeads, input / mhaHeads}, PACK_INPUT);
   // Weight Type: {heads, input/heads, heads, output/heads}
   auto weightType = getShape(
       {mhaHeads, input / mhaHeads, mhaHeads, output / mhaHeads}, PACK_WEIGHT);
@@ -215,20 +222,25 @@ Value MLIRGenerator::createMHALayer(unsigned index, Value key, Value query,
   auto vW = createDenseTensor(builder, initType, weightType, getRand());
 
   // First FC on each input
-  key = lowerMatmul({key, kW, /*bias=*/nullptr, /*output=*/nullptr});
-  query = lowerMatmul({query, qW, /*bias=*/nullptr, /*output=*/nullptr});
-  value = lowerMatmul({value, vW, /*bias=*/nullptr, /*output=*/nullptr});
+  key = lowerMatmul(
+      {key, kW, /*bias=*/nullptr, /*output=*/nullptr, /*contraction=*/true});
+  query = lowerMatmul(
+      {query, qW, /*bias=*/nullptr, /*output=*/nullptr, /*contraction=*/true});
+  value = lowerMatmul(
+      {value, vW, /*bias=*/nullptr, /*output=*/nullptr, /*contraction=*/true});
 
   // Multiply KeyxQuery
   auto queryT = transpose(query);
-  auto kq = lowerMatmul({key, queryT, /*bias=*/nullptr, /*output=*/nullptr});
+  auto kq = lowerMatmul({key, queryT, /*bias=*/nullptr, /*output=*/nullptr,
+                         /*contraction=*/true});
 
   // TODO: Divide by 1/sqrt(mhaHeads) when mhaHeads > 1
 
   // TODO: Implement MHA softmax
 
   // Multiply KQxValue
-  auto kqv = lowerMatmul({kq, value, /*bias=*/nullptr, /*output=*/nullptr});
+  auto kqv = lowerMatmul(
+      {kq, value, /*bias=*/nullptr, /*output=*/nullptr, /*contraction=*/true});
 
   // Return output tensor to the next layer
   return kqv;
@@ -305,10 +317,12 @@ void MLIRGenerator::createMhaKernel() {
   OpBuilder::InsertionGuard guard(builder);
   assert(layers.size() == 2 && "Multi-level transformer not implemented yet");
 
-  // First, create the kernel with the entry point name "entry"
-  // Each key/query/value into output
-  auto inputType = getShape({miniBatch, layers.front()}, PACK_INPUT);
-  auto outputType = getShape({miniBatch, layers.back()}, PACK_OUTPUT);
+  // Input Type: {MB, SL, heads, input/heads}
+  auto inputType = getShape(
+      {miniBatch, mhaSeqLen, mhaHeads, layers.front() / mhaHeads}, PACK_INPUT);
+  // Input Type: {MB, SL, heads, output/heads}
+  auto outputType = getShape(
+      {miniBatch, mhaSeqLen, mhaHeads, layers.back() / mhaHeads}, PACK_INPUT);
   auto func = createFunction(builder, module, "entry",
                              {inputType, inputType, inputType, outputType},
                              {outputType});
@@ -463,7 +477,7 @@ Value MLIRGenerator::lowerMatmul(MatMulArgs args) {
   } else if (!args.output) {
     auto inputShape = args.input.getType().cast<ShapedType>();
     auto weightShape = args.weight.getType().cast<ShapedType>();
-    auto dims = getMatMulResultShape(inputShape, weightShape);
+    auto dims = getMatMulResultShape(inputShape, weightShape, args.contraction);
     auto zero = getConstFloat(builder, 0.0, dataType.getIntOrFloatBitWidth());
     args.output =
         builder.create<tensor::EmptyOp>(loc, dims, dataType).getResult();
@@ -471,10 +485,22 @@ Value MLIRGenerator::lowerMatmul(MatMulArgs args) {
         builder.create<linalg::FillOp>(loc, zero, args.output).getResult(0);
   }
 
-  // Matmul as a linalg.generic
-  auto map1 = getMap(args.input, MAP_MATMUL_INPUT);   // { 0, 2 }
-  auto map2 = getMap(args.weight, MAP_MATMUL_WEIGHT); // { 2, 1 }
-  auto map3 = getMap(args.output, MAP_MATMUL_OUTPUT); // { 0, 1 }
+  // Map Types
+  MapType inputMap, weightMap, outputMap;
+  if (args.contraction) {
+    inputMap = MAP_CONTRACTION_INPUT;
+    weightMap = MAP_CONTRACTION_WEIGHT;
+    outputMap = MAP_CONTRACTION_OUTPUT;
+  } else {
+    inputMap = MAP_MATMUL_INPUT;
+    weightMap = MAP_MATMUL_WEIGHT;
+    outputMap = MAP_MATMUL_OUTPUT;
+  }
+
+  // Matmul/Contraction as a linalg.generic
+  auto map1 = getMap(args.input, inputMap);
+  auto map2 = getMap(args.weight, weightMap);
+  auto map3 = getMap(args.output, outputMap);
   auto matmul =
       builder
           .create<linalg::GenericOp>(
@@ -658,6 +684,7 @@ AffineMap MLIRGenerator::getMap(Value tensor, MapType type) {
   SmallVector<int64_t, 5> iter;
   switch (type) {
   case MAP_MATMUL:
+  case MAP_CONTRACTION:
     assert(false && "Invalid map type");
   case MAP_PARALLEL:
     // Parallel only depends on the tensor rank
@@ -707,6 +734,21 @@ AffineMap MLIRGenerator::getMap(Value tensor, MapType type) {
     else
       getDims({0, 1});
     break;
+  case MAP_CONTRACTION_INPUT:
+    assert(!packed && "MHA does not support packing yet");
+    assert(!vnniPacked && "MHA does not support VNNI yet");
+    getDims({0, 1, 2, 3});
+    break;
+  case MAP_CONTRACTION_WEIGHT:
+    assert(!packed && "MHA does not support packing yet");
+    assert(!vnniPacked && "MHA does not support VNNI yet");
+    getDims({2, 3, 4, 5});
+    break;
+  case MAP_CONTRACTION_OUTPUT:
+    assert(!packed && "MHA does not support packing yet");
+    assert(!vnniPacked && "MHA does not support VNNI yet");
+    getDims({0, 1, 4, 5});
+    break;
   }
 
   auto map = AffineMap::get(n, 0, list, &context);
@@ -749,6 +791,15 @@ SmallVector<utils::IteratorType> MLIRGenerator::getIterators(MapType type) {
     else
       return {utils::IteratorType::parallel, utils::IteratorType::parallel,
               utils::IteratorType::reduction};
+  case MAP_CONTRACTION_INPUT:
+  case MAP_CONTRACTION_WEIGHT:
+  case MAP_CONTRACTION_OUTPUT:
+  case MAP_CONTRACTION:
+    assert(!packed && "MHA does not support packing yet");
+    assert(!vnniPacked && "MHA does not support VNNI yet");
+    return {utils::IteratorType::parallel,  utils::IteratorType::parallel,
+            utils::IteratorType::reduction, utils::IteratorType::reduction,
+            utils::IteratorType::parallel,  utils::IteratorType::parallel};
   }
   return {};
 }
