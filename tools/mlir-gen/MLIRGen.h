@@ -33,7 +33,7 @@ class MLIRGenerator {
   /// MLIR Context
   MLIRContext context;
 
-  /// MLIR OpBulder
+  /// MLIR OpBuilder
   OpBuilder builder;
 
   /// Unknown location, since all this code is auto-generated
@@ -77,8 +77,14 @@ class MLIRGenerator {
   /// VNNI packing factor
   int vnniFactor;
 
+  /// MHA sequence length
+  int mhaSeqLen;
+
+  /// MHA hidden dimension
+  int mhaHiddenDim;
+
   /// MHA number of heads
-  int heads;
+  int mhaHeads;
 
   // ============================ Helpers
 
@@ -180,7 +186,7 @@ public:
   /// so should create new objects to not have to share / cleanup existing MLIR
   /// modules.
   MLIRGenerator(StringRef, unsigned, StringRef, StringRef, unsigned, int, bool,
-                bool, int, int);
+                bool, int, int, int, int);
 
   ~MLIRGenerator() { module->destroy(); }
 

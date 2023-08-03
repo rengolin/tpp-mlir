@@ -70,10 +70,12 @@ SmallVector<int64_t> getMatMulResultShape(ShapedType lhs, ShapedType rhs) {
 MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
                              StringRef layersStr, StringRef tilesStr,
                              unsigned typeWidth, int seed, bool enableSoftmax,
-                             bool biasAcc, int vnni, int heads)
+                             bool biasAcc, int vnni, int mhaSeqLen,
+                             int mhaHiddenDim, int mhaHeads)
     : builder(&context), loc(builder.getUnknownLoc()), miniBatch(miniBatch),
       seed(seed), enableSoftmax(enableSoftmax), biasAcc(biasAcc),
-      vnniFactor(vnni), heads(heads) {
+      vnniFactor(vnni), mhaSeqLen(mhaSeqLen), mhaHiddenDim(mhaHiddenDim),
+      mhaHeads(mhaHeads) {
 
   // Register all necessary dialects
   context
@@ -95,14 +97,31 @@ MLIRGenerator::MLIRGenerator(StringRef kernelStr, unsigned miniBatch,
   // Argument validation
   assert(miniBatch != 0 && "MiniBatch cannot be zero");
 
-  // Parse hidden layer sizes
-  parseStringList(layersStr, layers);
-  assert(layers.size() >= 2 && "Must have at least input/output layers");
+  // Validate kernel options
+  switch (kernelType) {
+  case KernelType::MATMUL:
+  case KernelType::FULLY_CONNECTED:
+  case KernelType::MLP:
+    // Parse hidden layer sizes
+    parseStringList(layersStr, layers);
+    assert(layers.size() >= 2 && "Must have at least input/output layers");
 
-  // Parse tile sizes
-  parseStringList(tilesStr, tiles);
-  assert(tiles.size() == 0 ||
-         tiles.size() == 3 && "Must have 3 tile sizes (or none)");
+    // Parse tile sizes
+    parseStringList(tilesStr, tiles);
+    assert(tiles.size() == 0 ||
+           tiles.size() == 3 && "Must have 3 tile sizes (or none)");
+    break;
+  case KernelType::MHA:
+    // Check compatibility of arguments
+    assert(mhaSeqLen > 0 && "MHA sequence length must be > 0");
+    assert((mhaHiddenDim % mhaHeads) == 0 &&
+           "MHA heads must divide hidden dim");
+    assert(tiles.empty() && "Tiling MHA not supported");
+
+    // TODO: Create multiple layers with a new option, for now, only one
+    layers = {mhaHiddenDim, mhaHiddenDim};
+    break;
+  }
 
   // Pick data type
   switch (typeWidth) {
@@ -171,33 +190,40 @@ Value MLIRGenerator::createMHALayer(unsigned index, Value key, Value query,
   OpBuilder::InsertionGuard guard(builder);
 
   // Input to the layer is previous size
-  unsigned input = layers[index - 1];
+  auto input = layers[index - 1];
 
   // Output to the layer is current size
   auto output = layers[index];
 
-  // Types: {MB, input} X {input, output} + {MB, output} -> ReLU
-  auto weightType = getShape({input, output}, PACK_WEIGHT);
-  auto outputType = getShape({miniBatch, output}, PACK_OUTPUT);
+  // Double checking
+  assert((input == output && input == mhaHiddenDim) &&
+         "MHA layer sizes must be the same as hidden dimension");
 
-  // Weights and biases
+  // Input Type: {MB, SL, heads, input/heads}
+  auto inputType =
+      getShape({miniBatch, mhaSeqLen, mhaHeads, input / mhaHeads}, PACK_INPUT);
+  // Weight Type: {heads, input/heads, heads, output/heads}
+  auto weightType = getShape(
+      {mhaHeads, input / mhaHeads, mhaHeads, output / mhaHeads}, PACK_WEIGHT);
+  // Output Type: {MB, SL, heads, output/heads}
+  auto outputType = getShape(
+      {miniBatch, mhaSeqLen, mhaHeads, output / mhaHeads}, PACK_OUTPUT);
+
+  // Weights
   auto kW = createDenseTensor(builder, initType, weightType, getRand());
-  auto kB = createDenseTensor(builder, initType, outputType, getRand());
   auto qW = createDenseTensor(builder, initType, weightType, getRand());
-  auto qB = createDenseTensor(builder, initType, outputType, getRand());
   auto vW = createDenseTensor(builder, initType, weightType, getRand());
-  auto vB = createDenseTensor(builder, initType, outputType, getRand());
 
   // First FC on each input
-  key = lowerMatmul({key, kW, kB, /*output=*/nullptr});
-  query = lowerMatmul({query, qW, qB, /*output=*/nullptr});
-  value = lowerMatmul({value, vW, vB, /*output=*/nullptr});
+  key = lowerMatmul({key, kW, /*bias=*/nullptr, /*output=*/nullptr});
+  query = lowerMatmul({query, qW, /*bias=*/nullptr, /*output=*/nullptr});
+  value = lowerMatmul({value, vW, /*bias=*/nullptr, /*output=*/nullptr});
 
   // Multiply KeyxQuery
   auto queryT = transpose(query);
   auto kq = lowerMatmul({key, queryT, /*bias=*/nullptr, /*output=*/nullptr});
 
-  // TODO: Divide by 1/sqrt(heads) when heads > 1
+  // TODO: Divide by 1/sqrt(mhaHeads) when mhaHeads > 1
 
   // TODO: Implement MHA softmax
 
@@ -277,9 +303,6 @@ std::string MLIRGenerator::createMetadata() {
 
 void MLIRGenerator::createMhaKernel() {
   OpBuilder::InsertionGuard guard(builder);
-  // See below for multi-head
-  // https://github.com/plaidml/tpp-mlir/blob/main/test/Models/multi-head-attention.mlir#L102
-  assert(heads == 1 && "Multi-head transformer not implemented yet");
   assert(layers.size() == 2 && "Multi-level transformer not implemented yet");
 
   // First, create the kernel with the entry point name "entry"

@@ -31,7 +31,7 @@ llvm::cl::opt<std::string> kernel("kernel",
                                   llvm::cl::value_desc("mlp,matmul,fc,mha"),
                                   llvm::cl::init("mlp"));
 
-// Input layer
+// Mini batch size
 llvm::cl::opt<unsigned> miniBatch("mini-batch",
                                   llvm::cl::desc("Mini batch size"),
                                   llvm::cl::value_desc("256"),
@@ -76,10 +76,20 @@ llvm::cl::opt<bool> biasAcc("bias-acc",
                             llvm::cl::value_desc("bool"),
                             llvm::cl::init(false));
 
+// MHA sequence length
+llvm::cl::opt<int> mhaSeqLen("mha-seq-len",
+                             llvm::cl::desc("MHA sequence length"),
+                             llvm::cl::value_desc("32"), llvm::cl::init(32));
+
+// MHA hidden dimension
+llvm::cl::opt<int> mhaHiddenDim("mha-hidden-dim",
+                                llvm::cl::desc("MHA hidden dimension"),
+                                llvm::cl::value_desc("512"),
+                                llvm::cl::init(512));
+
 // Number of heads in MHA
-llvm::cl::opt<int> heads("heads",
-                         llvm::cl::desc("Number of heads for MHA (default 1)"),
-                         llvm::cl::init(1));
+llvm::cl::opt<int> mhaHeads("mha-heads", llvm::cl::desc("MHA heads"),
+                            llvm::cl::value_desc("8"), llvm::cl::init(8));
 
 // Set VNNI packing factor for BF16
 llvm::cl::opt<int>
@@ -96,6 +106,7 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv, "MLIR Generator");
 
   MLIRGenerator gen(kernel, miniBatch, layers, tiles, floatWidth, seed,
-                    enableSoftmax, biasAcc, vnni, heads);
+                    enableSoftmax, biasAcc, vnni, mhaSeqLen, mhaHiddenDim,
+                    mhaHeads);
   return gen.generate(filename);
 }
