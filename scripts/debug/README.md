@@ -45,3 +45,32 @@ Examples:
 `diff.py`: Looks through a list of `NNN.mlir` files and shows the diff of each
 pair of files when the IR changes (ex. `003.mlir -> 007.mlir`, `007.mlir -> 013.mlir`
 etc.).
+
+## Benchmark Verifier
+
+### Purpose
+
+To verify which benchmarks (through `mlir-gen` and `tpp-run` configs) generate
+specific IR patterns (ex. fusion). With `tpp-run` printing IR and/or output, you
+can `grep` for any particular pattern and the script will show which benchmarks
+exhibit the pattern and which don't.
+
+### Usage
+
+Options:
+* `-b bin_dir`: The binary directory (usually `build/bin`)
+* `-c config_dir`: The benchmark config directory (usually `benchmarks/config`)
+* `-i file.json`: A specific file, if specified. Otherwise, scan all JSON files.
+* `-p early|mid|late`: Which stage to print the IR (default `none`)
+* `-print`: Print output (optional, default silent). Careful, this can be large.
+* `-grep "regexp"`: Search for the regexp in the IR and output.
+
+Examples:
+```
+// Run compiler over all benchmarls, checks fusion in XSMM dialect
+./scripts/debug/benchmark_verifier.sh \
+  -b ./build/bin \
+  -c ./benchmarks/config \
+  -p mid \
+  -grep "call @xsmm_fused_brgemm"
+```
