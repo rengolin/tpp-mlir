@@ -39,11 +39,18 @@ template <typename T> struct TensorInit : public ITensorInit {
   // Returns a dense attribute with a specified shape, initialized
   // with a particular implementation (see derived classes) with
   // a reasonable distribution.
-  virtual mlir::DenseElementsAttr get(mlir::ShapedType shape) override {
+  virtual FailureOr<mlir::DenseElementsAttr> get(mlir::ShapedType shape) override {
     buffer.clear();
-    size = 1;
-    for (size_t dim = 0, rank = shape.getRank(); dim < rank; dim++)
+    size = 1, M = 0, N = 0;
+    for (size_t dim = 0, rank = shape.getRank(); dim < rank; dim++) {
+      // M and N are the last two
+      M = N;
+      N = dim;
       size *= shape.getDimSize(dim);
+    }
+    // Shape must be at least 2D
+    if (M == 0 || N == 0)
+      return failure();
     fillData();
     // For some reason, memref global op needs dense tensor type
     // See: lib/Dialect/MemRef/IR/MemRefOps.cpp :: GlobalOp::verify
@@ -55,6 +62,8 @@ template <typename T> struct TensorInit : public ITensorInit {
 protected:
   // Number of elements in the shape
   size_t size;
+  // Dims for identity
+  size_t M, N;
   // Data pointer
   std::vector<T> buffer;
 

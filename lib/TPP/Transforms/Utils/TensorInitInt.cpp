@@ -62,10 +62,11 @@ void TensorInitInt::convertType(llvm::APInt &value) {
   assert(value.getBitWidth() == bitWidth && "Invalid element size");
 }
 
-DenseElementsAttr ConstantTensorInitInt::get(ShapedType shape) {
+FailureOr<DenseElementsAttr> ConstantTensorInitInt::get(ShapedType shape) {
   auto value = APInt(bitWidth, 1, isSigned);
+  // Element type not supported
   if (!isTypeSupported(shape.getElementType()))
-    assert(false && "Element type not supported");
+    return failure();
   convertType(value);
 
   // For some reason, memref global op needs dense tensor type
@@ -79,11 +80,28 @@ void ConstantTensorInitInt::fillData() {
   assert(false && "Should not be called");
 }
 
+FailureOr<DenseElementsAttr> IdentityTensorInitInt::get(ShapedType shape) {
+  // Element type not supported
+  if (!isTypeSupported(shape.getElementType()))
+    return mlir::failure();
+  if (M == 0 || M != N)
+    return mlir::failure();
+
+  auto zero = APInt(bitWidth, 0, isSigned);
+  auto one = APInt(bitWidth, 1, isSigned);
+  convertType(zero);
+  convertType(one);
+
+  // For some reason, memref global op needs dense tensor type
+  // See: lib/Dialect/MemRef/IR/MemRefOps.cpp :: GlobalOp::verify
+  auto tensorType =
+      RankedTensorType::get(shape.getShape(), shape.getElementType());
+  return mlir::DenseElementsAttr::get(tensorType, value);
+}
+
 void IdentityTensorInitInt::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
-  uint64_t data[3] = {0, 1, 2};
-  for (size_t i = 0; i < size; i++)
-    push(data[i % 3]);
+  assert(M != 0 && M == N && "Last two dims must be same");
 }
 
 void RandomTensorInitInt::fillData() {

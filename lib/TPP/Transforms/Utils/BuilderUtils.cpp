@@ -78,6 +78,8 @@ Value createDenseTensor(OpBuilder &builder, TensorInitType initType,
                         TensorType type, int seed) {
   auto unkLoc = builder.getUnknownLoc();
   auto init = getTensorInit(initType, type.getElementType(), seed);
+  if (failed(init))
+    return {}
   auto floatInit = init->get(type);
   return builder.create<arith::ConstantOp>(unkLoc, type, floatInit);
 }

@@ -97,7 +97,6 @@ struct ConstantTensorInitFloat : TensorInitFloat {
 
 // Identity init
 struct IdentityTensorInitFloat : TensorInitFloat {
-  int M, N, other;
   IdentityTensorInitFloat(DataType type) : TensorInitFloat(type) {}
 
   // Return identity.

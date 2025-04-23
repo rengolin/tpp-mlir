@@ -70,10 +70,14 @@ void ConstantTensorInitFloat::fillData() {
 
 void IdentityTensorInitFloat::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
-  float data[3] = {0.3f, 0.6f, 0.9f};
-  for (size_t i = 0; i < size; i++)
-    push(data[i % 3]);
-}
+  assert(M != 0 && M == N && "Last two dims must be same");
+  buffer.resize(size, APFloat(0.0));
+  size_t rest = size / (M*N);
+  for (size_t loop = 0; loop < rest; loop++)
+    for (size_t m = 0; m < M; m++)
+      for (size_t n = 0; n < N; n++)
+        insert(m+n*N, 1.0);
+  }
 
 void RandomTensorInitFloat::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");

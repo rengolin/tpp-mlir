@@ -86,7 +86,6 @@ struct ConstantTensorInitInt : TensorInitInt {
 
 // Identity init
 struct IdentityTensorInitInt : TensorInitInt {
-  int M, N, other;
   IdentityTensorInitInt(DataType type) : TensorInitInt(type) {}
 
   // Return identity.
