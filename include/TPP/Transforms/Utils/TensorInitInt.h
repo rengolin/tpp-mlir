@@ -92,17 +92,6 @@ struct SimpleTensorInitInt : TensorInitInt {
   void fillData() override;
 };
 
-// Continuous init (quantized normalized affine range).
-struct ContinuousTensorInitInt : TensorInitInt {
-  ContinuousTensorInitInt(DataType type) : TensorInitInt(type) {}
-
-  // Return a dense<0 ... upperBound> throughout the shape.
-  void fillData() override;
-
-  // Upper bound for quantization.
-  int upperBound = 255;
-};
-
 // Random init (uniform).
 struct RandomTensorInitInt : TensorInitInt {
   RandomTensorInitInt(DataType type, int seed)

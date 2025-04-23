@@ -75,13 +75,6 @@ void SimpleTensorInitFloat::fillData() {
     push(data[i % 3]);
 }
 
-void ContinuousTensorInitFloat::fillData() {
-  assert(buffer.size() == 0 && "Buffer not empty");
-  float normFactor = static_cast<float>(size);
-  for (size_t i = 0; i < size; i++)
-    push(static_cast<float>(i) / normFactor);
-}
-
 void RandomTensorInitFloat::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
   for (size_t i = 0; i < size; i++)

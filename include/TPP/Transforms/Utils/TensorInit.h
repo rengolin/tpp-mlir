@@ -83,7 +83,6 @@ enum class TensorInitType {
   Auto,
   Constant,
   Simple,
-  Continuous,
   Random,
   Normal,
   Invalid

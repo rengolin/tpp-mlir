@@ -86,14 +86,6 @@ void SimpleTensorInitInt::fillData() {
     push(data[i % 3]);
 }
 
-void ContinuousTensorInitInt::fillData() {
-  assert(buffer.size() == 0 && "Buffer not empty");
-  float normFactor = static_cast<float>(size);
-  for (size_t i = 0; i < size; i++)
-    push(static_cast<uint64_t>((static_cast<float>(i) / normFactor) *
-                               upperBound));
-}
-
 void RandomTensorInitInt::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
   for (size_t i = 0; i < size; i++)

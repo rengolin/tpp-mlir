@@ -65,7 +65,6 @@ TensorInitType parseTensorInitType(StringRef name) {
                   .Case("", TensorInitType::Auto)
                   .Case("const", TensorInitType::Constant)
                   .Case("simple", TensorInitType::Simple)
-                  .Case("cont", TensorInitType::Continuous)
                   .Case("random", TensorInitType::Random)
                   .Case("normal", TensorInitType::Normal)
                   .Default(TensorInitType::Invalid);
@@ -96,9 +95,6 @@ TensorInitPtr getTensorInit(TensorInitType type, mlir::Type elmType, int seed) {
     case TensorInitType::Simple:
       initPtr = std::make_shared<SimpleTensorInitFloat>(dataType);
       break;
-    case TensorInitType::Continuous:
-      initPtr = std::make_shared<ContinuousTensorInitFloat>(dataType);
-      break;
     case TensorInitType::Random:
       assert(seed && "Can't call random initializers without seed");
       initPtr = std::make_shared<RandomTensorInitFloat>(dataType, seed);
@@ -120,9 +116,6 @@ TensorInitPtr getTensorInit(TensorInitType type, mlir::Type elmType, int seed) {
       break;
     case TensorInitType::Simple:
       initPtr = std::make_shared<SimpleTensorInitInt>(dataType);
-      break;
-    case TensorInitType::Continuous:
-      initPtr = std::make_shared<ContinuousTensorInitInt>(dataType);
       break;
     case TensorInitType::Random:
       assert(seed && "Can't call random initializers without seed");

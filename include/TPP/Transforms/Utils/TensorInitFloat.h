@@ -103,14 +103,6 @@ struct SimpleTensorInitFloat : TensorInitFloat {
   void fillData() override;
 };
 
-// Continuous init (normalized affine range).
-struct ContinuousTensorInitFloat : TensorInitFloat {
-  ContinuousTensorInitFloat(DataType type) : TensorInitFloat(type) {}
-
-  // Return a dense<0.0 ... 1.0> throughout the shape.
-  void fillData() override;
-};
-
 // Random init (uniform).
 struct RandomTensorInitFloat : TensorInitFloat {
   RandomTensorInitFloat(DataType type, int seed)
