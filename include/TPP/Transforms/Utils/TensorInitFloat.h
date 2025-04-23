@@ -95,11 +95,12 @@ struct ConstantTensorInitFloat : TensorInitFloat {
   void fillData() override;
 };
 
-// Simple init (basic example, not useful).
-struct SimpleTensorInitFloat : TensorInitFloat {
-  SimpleTensorInitFloat(DataType type) : TensorInitFloat(type) {}
+// Identity init
+struct IdentityTensorInitFloat : TensorInitFloat {
+  int M, N, other;
+  IdentityTensorInitFloat(DataType type) : TensorInitFloat(type) {}
 
-  // Return a dense<0.3, 0.6, 0.9> repeated throughout the shape.
+  // Return identity.
   void fillData() override;
 };
 

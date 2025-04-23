@@ -79,7 +79,7 @@ void ConstantTensorInitInt::fillData() {
   assert(false && "Should not be called");
 }
 
-void SimpleTensorInitInt::fillData() {
+void IdentityTensorInitInt::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
   uint64_t data[3] = {0, 1, 2};
   for (size_t i = 0; i < size; i++)

@@ -84,11 +84,12 @@ struct ConstantTensorInitInt : TensorInitInt {
   void fillData() override;
 };
 
-// Simple init (basic example, not useful).
-struct SimpleTensorInitInt : TensorInitInt {
-  SimpleTensorInitInt(DataType type) : TensorInitInt(type) {}
+// Identity init
+struct IdentityTensorInitInt : TensorInitInt {
+  int M, N, other;
+  IdentityTensorInitInt(DataType type) : TensorInitInt(type) {}
 
-  // Return a dense<0, 1, 2> repeated throughout the shape.
+  // Return identity.
   void fillData() override;
 };
 

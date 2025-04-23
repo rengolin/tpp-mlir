@@ -82,7 +82,7 @@ protected:
 enum class TensorInitType {
   Auto,
   Constant,
-  Simple,
+  Identity,
   Random,
   Normal,
   Invalid

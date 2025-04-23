@@ -68,7 +68,7 @@ void ConstantTensorInitFloat::fillData() {
   assert(false && "Should not be called");
 }
 
-void SimpleTensorInitFloat::fillData() {
+void IdentityTensorInitFloat::fillData() {
   assert(buffer.size() == 0 && "Buffer not empty");
   float data[3] = {0.3f, 0.6f, 0.9f};
   for (size_t i = 0; i < size; i++)
