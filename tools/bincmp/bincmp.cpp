@@ -36,35 +36,52 @@ struct Matrix {
 // ( 0, 15265, 16002, 0, 0, 15819, 0, 15570 )
 // ( 0, 15830, 0, 0, 0, 15819, 15992, 15920 )
 
+void print_matrix(Matrix &m) {
+  assert(m.data.size() == m.M*m.N);
+  for (size_t i=0; i<m.M; i++) {
+    std::cout << "( ";
+    for (size_t j=0; j<m.N; j++) {
+      std::cout << m.data[i*m.M+j] << " ";
+    }
+    std::cout << ")\n";
+  }
+}
+
 Matrix read_file(fstream& file) {
   Matrix m;
   size_t M=0, N=0;
   string token;
   while (file >> token) {
+    if (token == "(")
+      continue;
+
     if (token == ")") {
-      if (m.M && m.M != M) {
-        cerr << "ERROR: Rows have different lengths (" << m.M << ", " << M << ")\n";
+      if (m.N && m.N != N) {
+        cerr << "ERROR: Rows have different lengths (" << m.N << ", " << N << ")\n";
         exit(ERROR_BAD_SHAPE);
       }
-      m.M = M;
-      M = 0;
-      N++;
+      m.N = N;
+      N = 0;
+      M++;
       continue;
     }
     size_t value = atol(token.c_str());
     m.data.push_back(value);
-    M++;
+    N++;
   }
-  m.N = N;
+  m.M = M;
 
   return m;
 }
 
 int diff_file(libxsmm_datatype datatype, fstream& fileA, fstream& fileB) {
   auto matrixA = read_file(fileA);
-  std::cerr << "LHS: ["<< matrixA.M << "," << matrixA.N << "]\n";
+  std::cout << "LHS: ["<< matrixA.M << "," << matrixA.N << "]\n";
+  print_matrix(matrixA);
+
   auto matrixB = read_file(fileB);
-  std::cerr << "RHS: ["<< matrixB.M << "," << matrixB.N << "]\n";
+  std::cout << "RHS: ["<< matrixB.M << "," << matrixB.N << "]\n";
+  print_matrix(matrixB);
   if (matrixA.M != matrixB.M || matrixA.N != matrixB.N) {
     std::cerr << "ERROR: Matrix shapes different\n";
     return ERROR_BAD_SHAPE;
@@ -101,9 +118,9 @@ libxsmm_datatype parse_libxsmm_datatype(const char* str) {
 }
 
 void usage() {
-  fprintf(stderr, "Calculates the norm of the difference between two binary files.\n\n");
-  fprintf(stderr, "usage: bincmp <datatype> <path-A> <path-B>\n");
-  fprintf(stderr, "Datatype: I8, I32, HF8, BF8, F16, BF16, F32, F64.\n\n");
+  std::cerr << "Calculates the norm of the difference between two binary files.\n\n";
+  std::cerr << "usage: bincmp <datatype> <path-A> <path-B>\n";
+  std::cerr << "Datatype: I8, I32, HF8, BF8, F16, BF16, F32, F64.\n\n";
   exit(ERROR_USAGE);
 }
 
@@ -114,12 +131,12 @@ int main(int argc, char *const argv[]) {
   auto datatype = parse_libxsmm_datatype(argv[1]);
   if (datatype == LIBXSMM_DATATYPE_UNSUPPORTED)
     usage();
-  printf("DATATYPE: %d\n", datatype);
 
   fstream fileA{argv[2]};
   fstream fileB{argv[3]};
   if (!fileA.is_open() || !fileB.is_open())
     usage();
 
+  std::cerr << "TY: " << datatype << ", LHS: " << argv[2] << ", RHS: " << argv[3] << "\n";
   return diff_file(datatype, fileA, fileB);
 }
