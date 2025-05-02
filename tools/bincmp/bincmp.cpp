@@ -8,6 +8,8 @@
 #include <iostream>
 #include <fstream>
 
+#include "libxsmm_math.h"
+
 #define SUCCESS 0
 #define ERROR_USAGE 1
 #define ERROR_FILE_SIZE 2

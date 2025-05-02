@@ -5,4 +5,8 @@ add_llvm_executable(bincmp
 
 llvm_update_compile_flags(bincmp)
 
+target_include_directories(bincmp
+  PUBLIC
+    $<BUILD_INTERFACE:${XSMM_INCLUDE_DIRS}>)
+
 install(TARGETS bincmp RUNTIME DESTINATION bin)
