@@ -60,38 +60,66 @@ Matrix read_file(fstream& file) {
   return m;
 }
 
-int diff_file(fstream& fileA, fstream& fileB) {
+int diff_file(libxsmm_datatype datatype, fstream& fileA, fstream& fileB) {
   auto matrixA = read_file(fileA);
-  cerr << "LHS: ["<< matrixA.M << "," << matrixA.N << "]\n";
+  std::cerr << "LHS: ["<< matrixA.M << "," << matrixA.N << "]\n";
   auto matrixB = read_file(fileB);
-  cerr << "RHS: ["<< matrixB.M << "," << matrixB.N << "]\n";
+  std::cerr << "RHS: ["<< matrixB.M << "," << matrixB.N << "]\n";
   if (matrixA.M != matrixB.M || matrixA.N != matrixB.N) {
-    cerr << "ERROR: Matrix shapes different\n";
+    std::cerr << "ERROR: Matrix shapes different\n";
     return ERROR_BAD_SHAPE;
   }
-  if (matrixA.data != matrixB.data) {
-    cerr << "ERROR: Matrices different\n";
+  auto error = check_matrix(datatype, &matrixA.data[0], &matrixB.data[0], 8, matrixA.M, matrixA.N);
+  if (error) {
+    std::cerr << "ERROR: Matrices different\n";
     return ERROR_BAD_NORM;
   }
 
-cerr << "SUCCESS\n";
+  std::cerr << "SUCCESS\n";
   return SUCCESS;
 }
 
+libxsmm_datatype parse_libxsmm_datatype(const char* str) {
+  if (strncmp("I8", str, 2) == 0)
+    return LIBXSMM_DATATYPE_I8;
+  else if (strncmp("I32", str, 3) == 0)
+    return LIBXSMM_DATATYPE_I32;
+  else if (strncmp("HF8", str, 3) == 0)
+    return LIBXSMM_DATATYPE_HF8;
+  else if (strncmp("BF8", str, 3) == 0)
+    return LIBXSMM_DATATYPE_BF8;
+  else if (strncmp("F16", str, 3) == 0)
+    return LIBXSMM_DATATYPE_F16;
+  else if (strncmp("BF16", str, 4) == 0)
+    return LIBXSMM_DATATYPE_BF16;
+  else if (strncmp("F32", str, 3) == 0)
+    return LIBXSMM_DATATYPE_F32;
+  else if (strncmp("F64", str, 3) == 0)
+    return LIBXSMM_DATATYPE_F64;
+  else
+    return LIBXSMM_DATATYPE_UNSUPPORTED;
+}
+
 void usage() {
-  fprintf(stderr, "usage: bincmp <path-A> <path-B>\n\n");
-  fprintf(stderr, "Calculates the norm of the difference between two binary files.\n");
+  fprintf(stderr, "Calculates the norm of the difference between two binary files.\n\n");
+  fprintf(stderr, "usage: bincmp <datatype> <path-A> <path-B>\n");
+  fprintf(stderr, "Datatype: I8, I32, HF8, BF8, F16, BF16, F32, F64.\n\n");
   exit(ERROR_USAGE);
 }
 
 int main(int argc, char *const argv[]) {
-  if (argc != 3)
+  if (argc != 4)
     usage();
+  
+  auto datatype = parse_libxsmm_datatype(argv[1]);
+  if (datatype == LIBXSMM_DATATYPE_UNSUPPORTED)
+    usage();
+  printf("DATATYPE: %d\n", datatype);
 
-  fstream fileA{argv[1]};
-  fstream fileB{argv[2]};
+  fstream fileA{argv[2]};
+  fstream fileB{argv[3]};
   if (!fileA.is_open() || !fileB.is_open())
     usage();
 
-  return diff_file(fileA, fileB);
+  return diff_file(datatype, fileA, fileB);
 }
