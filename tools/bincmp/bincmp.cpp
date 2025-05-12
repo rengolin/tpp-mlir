@@ -127,7 +127,7 @@ void usage() {
 int main(int argc, char *const argv[]) {
   if (argc != 4)
     usage();
-  
+
   auto datatype = parse_libxsmm_datatype(argv[1]);
   if (datatype == LIBXSMM_DATATYPE_UNSUPPORTED)
     usage();
