@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <optional>
 
 #include "libxsmm_math.h"
 
@@ -74,7 +75,7 @@ Matrix read_file(fstream& file) {
   return m;
 }
 
-int diff_file(libxsmm_datatype datatype, fstream& fileA, fstream& fileB) {
+int diff_file(libxsmm_datatype datatype, double delta, fstream& fileA, fstream& fileB) {
   auto matrixA = read_file(fileA);
   std::cout << "LHS: ["<< matrixA.M << "," << matrixA.N << "]\n";
   print_matrix(matrixA);
@@ -86,7 +87,7 @@ int diff_file(libxsmm_datatype datatype, fstream& fileA, fstream& fileB) {
     std::cerr << "ERROR: Matrix shapes different\n";
     return ERROR_BAD_SHAPE;
   }
-  auto error = check_matrix(datatype, &matrixA.data[0], &matrixB.data[0], 8, matrixA.M, matrixA.N);
+  auto error = check_matrix(datatype, &matrixA.data[0], &matrixB.data[0], matrixA.N, matrixA.M, matrixA.N);
   if (error) {
     std::cerr << "ERROR: Matrices different\n";
     return ERROR_BAD_NORM;
@@ -117,26 +118,39 @@ libxsmm_datatype parse_libxsmm_datatype(const char* str) {
     return LIBXSMM_DATATYPE_UNSUPPORTED;
 }
 
+std::optional<double> parse_delta(char* str) {
+  char* ptr = str;
+  double delta = strtof(str, &ptr);
+  if (ptr == str)
+    return std::nullopt;
+  return delta;
+}
+
 void usage() {
   std::cerr << "Calculates the norm of the difference between two binary files.\n\n";
-  std::cerr << "usage: bincmp <datatype> <path-A> <path-B>\n";
-  std::cerr << "Datatype: I8, I32, HF8, BF8, F16, BF16, F32, F64.\n\n";
+  std::cerr << "usage: bincmp <datatype> <delta> <path-A> <path-B>\n";
+  std::cerr << "Datatype: I8, I32, HF8, BF8, F16, BF16, F32, F64.\n";
+  std::cerr << "Delta: Max float difference for abs/rel differences.\n\n";
   exit(ERROR_USAGE);
 }
 
 int main(int argc, char *const argv[]) {
-  if (argc != 4)
+  if (argc != 5)
     usage();
 
   auto datatype = parse_libxsmm_datatype(argv[1]);
   if (datatype == LIBXSMM_DATATYPE_UNSUPPORTED)
     usage();
 
-  fstream fileA{argv[2]};
-  fstream fileB{argv[3]};
+  auto delta = parse_delta(argv[2]);
+  if (!delta.has_value())
+    usage();
+
+  fstream fileA{argv[3]};
+  fstream fileB{argv[4]};
   if (!fileA.is_open() || !fileB.is_open())
     usage();
 
-  std::cerr << "TY: " << datatype << ", LHS: " << argv[2] << ", RHS: " << argv[3] << "\n";
-  return diff_file(datatype, fileA, fileB);
+  std::cerr << "TY: " << datatype << ", DELTA: " << *delta << ", LHS: " << argv[3] << ", RHS: " << argv[4] << "\n";
+  return diff_file(datatype, *delta, fileA, fileB);
 }
