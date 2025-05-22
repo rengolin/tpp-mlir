@@ -1,6 +1,7 @@
 // RUN: bincmp F64 %S/reference.out %S/reference.out 2>&1 | FileCheck %s --check-prefix=IDENTICAL
 // RUN: bincmp F64 %S/reference.out %S/variance.out 2>&1 | FileCheck %s --check-prefix=VARIANCE
 // RUN: bincmp F64 %S/reference.out %S/rows-flipped.out 2>&1 | FileCheck %s --check-prefix=FLIPPED
+// RUN: bincmp F64 %S/reference.out %S/different.out 2>&1 | FileCheck %s --check-prefix=DIFFERENT
 
 
 // IDENTICAL: L1 reference  : 2.417690475298306314066272e-318
@@ -26,3 +27,11 @@
 // FLIPPED: Linf abs.error: 0.000000000000000000000000
 // FLIPPED: Linf rel.error: 1.000000000000000000000000
 // FLIPPED: Check-norm    : 0.000000000000000000000000
+
+// DIFFERENT: L1 reference  : 2.417690475298306314066272e-318
+// DIFFERENT: L1 test       : 1.188681430511080203072202e-317
+// DIFFERENT: L2 abs.error  : 0.000000000000000000000000
+// DIFFERENT: L2 rel.error  : 6.627657214579874001003645
+// DIFFERENT: Linf abs.error: 0.000000000000000000000000
+// DIFFERENT: Linf rel.error: 4.232469993682880904373178
+// DIFFERENT: Check-norm    : 0.000000000000000000000000
