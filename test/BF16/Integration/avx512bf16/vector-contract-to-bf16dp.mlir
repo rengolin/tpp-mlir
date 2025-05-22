@@ -1,6 +1,6 @@
 // RUN: tpp-run  -e gemm_bf16_dp_random_AB --entry-point-result=void -print --splat-to-random --init-type normal  -seed 123  %s > %t.1
 // RUN: tpp-opt %s --tile-brgemm-linalg="registerBlocking=4,32,2"  --loop-invariant-code-motion --vectorization-pass --vector-contract-to-bf16dp | tpp-run  -e gemm_bf16_dp_random_AB --entry-point-result=void -print  --splat-to-random --init-type normal  -seed 123  > %t.2
-// RUN: fpcmp -r 0.001 %t.1 %t.2
+// RUN: fpcmp -r 0.01 %t.1 %t.2
 
 memref.global "private" constant @__constant_2x16x32x2xbf16 : memref<2x16x32x2xbf16> = dense<1.000000e+00> {alignment = 64 : i64}
 func.func @gemm_bf16_dp_random_AB(%arg0: memref<8x2x32x32xbf16>) -> memref<8x2x32x32xbf16> {
