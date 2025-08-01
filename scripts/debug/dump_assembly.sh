@@ -53,9 +53,11 @@ OBJDUMP_COMMAND="${OBJDUMP} -d ${DUMP_FILE}"
 echo "Dumping the assembly:"
 echo " $ \"${OBJDUMP_COMMAND} > ${ASM_FILE}\""
 ${OBJDUMP_COMMAND} > ${ASM_FILE}
-rm -f ${DUMP_FILE}
 
 if [ $? -ne 0 ]; then
   echo "Error dumping the assembly!"
+  echo "Object file: ${DUMP_FILE}"
   exit 1
 fi
+
+rm -f ${DUMP_FILE}
