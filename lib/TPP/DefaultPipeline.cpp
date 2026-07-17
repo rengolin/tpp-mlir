@@ -68,10 +68,6 @@ llvm::cl::list<unsigned>
                      llvm::cl::list_init<unsigned>(SmallVector<unsigned>{2, 8}),
                      llvm::cl::CommaSeparated);
 
-llvm::cl::opt<bool> linalgToVector("linalg-to-vector",
-                                   llvm::cl::desc("Lower linalg to vector"),
-                                   llvm::cl::init(false));
-
 llvm::cl::opt<bool>
     vectorToKernel("vector-to-kernels",
                    llvm::cl::desc("Lower vector to micro-kernels"),
@@ -101,6 +97,13 @@ llvm::cl::list<unsigned> registerBlocking(
     "registerBlocking",
     llvm::cl::desc("Register blocking tile sizes for brgemm operation"),
     llvm::cl::list_init<unsigned>(SmallVector<unsigned>{8, 32}),
+    llvm::cl::CommaSeparated);
+
+llvm::cl::list<int64_t> gemmUnroll(
+    "gemm-unroll",
+    llvm::cl::desc("GEMM register unroll sizes for the innermost dims: [M, N, "
+                   "K]. Required by the nano-kernel path to reduce "
+                   "vector.contract to register-sized shapes"),
     llvm::cl::CommaSeparated);
 
 namespace mlir {
@@ -194,13 +197,14 @@ private:
     tppDefaultOptions.sfcOrder = sfcOrder;
     tppDefaultOptions.parallelTaskGrid = SmallVector<unsigned>{
         parallelTaskGrid.begin(), parallelTaskGrid.end()};
-    tppDefaultOptions.linalgToVector = linalgToVector;
     tppDefaultOptions.lowerPackUnpackWithoutTranspose =
         lowerPackUnpackWithoutTranspose;
     tppDefaultOptions.disableVnniPacking = disableVnniPacking;
     tppDefaultOptions.disableTileElementwiseOps = disableTileElementwiseOps;
     tppDefaultOptions.registerBlocking = SmallVector<unsigned>{
         registerBlocking.begin(), registerBlocking.end()};
+    tppDefaultOptions.gemmUnroll =
+        SmallVector<int64_t>{gemmUnroll.begin(), gemmUnroll.end()};
     tppDefaultOptions.vectorToKernel = vectorToKernel;
     tppDefaultOptions.nanoKernel = nanoKernel;
     tppDefaultOptions.defBundleCpuTargetFeature = pipelineCpuTargetFeature;
