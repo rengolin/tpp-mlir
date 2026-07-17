@@ -1,5 +1,5 @@
 // RUN: tpp-run  -e gemm_i8 --entry-point-result=void -print --splat-to-random --init-type normal  -seed 123  %s > %t.1
-// RUN: tpp-run  -e gemm_i8 --entry-point-result=void --nano-kernels --registerBlocking=3,32,4 --gemm-unrolling=1,16,1 -print  --splat-to-random --init-type normal  -seed 123 %s > %t.2
+// RUN: tpp-run  -e gemm_i8 --entry-point-result=void --nano-kernels --registerBlocking=3,32,4 --gemm-unroll=1,16,1 -print  --splat-to-random --init-type normal  -seed 123 %s > %t.2
 // RUN: fpcmp -r 0.001 %t.1 %t.2
 
 func.func @gemm_i8(%arg0: memref<2x24x8x4xi8>, %arg1: memref<2x8x128x4xi8>, %arg2: memref<24x128xi32>) -> memref<24x128xi32> {
