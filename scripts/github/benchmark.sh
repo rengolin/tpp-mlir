@@ -99,7 +99,6 @@ benchmark () {
 # Base Benchmarks
 if [ "$BENCH_BASE" ]; then
   benchmark base/base.json "Base Benchmarks"
-  benchmark base/pack.json "Pack Benchmarks"
   benchmark base/mha.json "MHA Benchmarks"
   benchmark base/named-ops.json "Named Ops Benchmarks"
 fi
@@ -113,11 +112,14 @@ fi
 if [ "$BENCH_OMP" ]; then
   benchmark omp/dnn-fp32.json "OpenMP XSMM-DNN FP32"
   benchmark omp/dnn-bf16.json "OpenMP XSMM-DNN BF16"
-  benchmark omp/mlir-fp32.json "OpenMP TPP-MLIR FP32"
-  benchmark omp/mlir-fp32-vector-to-kernel.json "OpenMP TPP-MLIR VECTOR-TO-KERNEL FP32"
-  benchmark omp/mlir-bf16.json "OpenMP TPP-MLIR BF16"
-  benchmark omp/torch-dynamo.json "OpenMP TPP-MLIR PyTorch"
-  benchmark omp/torch-dynamo-vector-to-kernel.json "OpenMP TPP-MLIR VECTOR-TO-KERNEL PyTorch"
+  benchmark omp/mlir-xsmm-fp32.json "OpenMP TPP-MLIR XSMM FP32"
+  benchmark omp/mlir-xsmm-bf16.json "OpenMP TPP-MLIR XSMM BF16"
+  benchmark omp/mlir-vector-fp32.json "OpenMP TPP-MLIR VECTOR FP32"
+  benchmark omp/mlir-vector-fp32-avx2.json "OpenMP TPP-MLIR VECTOR FP32 AVX2"
+  benchmark omp/mlir-vector-bf16.json "OpenMP TPP-MLIR VECTOR FP32"
+  benchmark omp/mlir-vector-amx.json "OpenMP TPP-MLIR VECTOR BF16/I8 AMX"
+  benchmark omp/torch-dynamo-xsmm.json "OpenMP TPP-MLIR XSMM PyTorch"
+  benchmark omp/torch-dynamo-vector.json "OpenMP TPP-MLIR VECTOR PyTorch"
 fi
 
 # Matmul Benchmarks
