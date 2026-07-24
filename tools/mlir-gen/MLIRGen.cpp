@@ -363,6 +363,12 @@ Value MLIRGenerator::createLayer(LayerArgs &args, bool hasMixedType) {
     }
   }
 
+  // For narrow float types with tiled output, the matmul and the subsequent
+  // elementwise ops accumulate in f32. Downcast the result back to the narrow
+  // output type here, after the last elementwise operation.
+  if (downcast == DowncastType::AfterElementwise)
+    chain = lowerDowncast(chain, args.output.value);
+
   // Return output tensor to the next layer
   return chain;
 }
@@ -611,10 +617,12 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
   // For quant, derive the output type from input type.
   // TODO: Revisit to check we really need zero initalizer for mixed precision
   // float type?
-  if (quantType == QuantizationType::Quant) {
+  switch (quantType) {
+  case QuantizationType::Quant:
     output = getZeroInitTensor(zeroType);
-  } else if (quantType == QuantizationType::Dequant ||
-             quantType == QuantizationType::Mixed) {
+    break;
+  case QuantizationType::Dequant:
+  case QuantizationType::Mixed: {
     Type elementType = inputType.getElementType();
     if (elementType.isInteger(8)) {
       // Get integer tensor accumulator type for dequantization.
@@ -622,17 +630,34 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
           RankedTensorType::get(shape, builder.getIntegerType(32));
       output = getZeroInitTensor(intAccumulatorType);
     }
+    break;
   }
-
-  // Plain narrow float types (e.g. bf16) must accumulate the matmul in f32 and
-  // then downcast the result back to the narrow type. Detect this case here so
-  // the matmul below writes into an f32 accumulator.
-  Type outputElementType = outputType.getElementType();
-  bool downcastResult = quantType == QuantizationType::None &&
-                        outputElementType.isBF16();
-  if (downcastResult) {
-    auto f32AccType = RankedTensorType::get(shape, builder.getF32Type());
-    output = getZeroInitTensor(f32AccType);
+  case QuantizationType::None: {
+    // Plain narrow float types (e.g. bf16) must accumulate the matmul in f32
+    // and then downcast the result back to the narrow type. Detect this case
+    // here so the matmul below writes into an f32 accumulator.
+    Type outputElementType = outputType.getElementType();
+    bool downcastResult = outputElementType.isFloat() &&
+                     outputElementType.getIntOrFloatBitWidth() < 32;
+    if (downcastResult) {
+      auto f32AccType = RankedTensorType::get(shape, builder.getF32Type());
+      output = getZeroInitTensor(f32AccType);
+      if (tiles.size() > 0) {
+        // If the output is tiled, we downcast after the last elementwise
+        // operation. The matmul and the subsequent elementwise ops all
+        // accumulate in f32, guaranteeing "perfect codegen" for the tiled
+        // output.
+        downcast = DowncastType::AfterElementwise;
+      } else {
+        // If the output is not tiled, we will downcast after the matmul to
+        // simulate PyTorch behaviour.
+        downcast = DowncastType::AfterMatmul;
+      }
+    }
+    break;
+  }
+  default:
+    break;
   }
 
   if (vnniPacked) {
@@ -668,7 +693,10 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
   }
 
   // Downcast the f32 accumulator back to the narrow output type (e.g. bf16).
-  if (downcastResult)
+  // We do it here when the output is not tiled to simulate PyTorch behaviour.
+  // When the output is tiled, the downcast is done after the last elementwise,
+  // to guarantee "perfect codegen" for the tiled output.
+  if (downcast == DowncastType::AfterMatmul)
     chain = lowerDowncast(chain, args.output.value);
 
   computeMatmulFlops(inputType, outputType);
@@ -770,6 +798,39 @@ Value MLIRGenerator::lowerDowncast(Value input, Value output) {
           .getResult(0);
 
   return downcast;
+}
+
+Value MLIRGenerator::castTensorElementType(Value input, Type dstElementType) {
+  auto inTy = cast<ShapedType>(input.getType());
+  if (inTy.getElementType() == dstElementType)
+    return input;
+
+  // Extend or truncate depending on the relative width of the element types.
+  bool extend = inTy.getElementType().getIntOrFloatBitWidth() <
+                dstElementType.getIntOrFloatBitWidth();
+  auto outTy = RankedTensorType::get(inTy.getShape(), dstElementType);
+  Value init = tensor::EmptyOp::create(builder, loc, outTy, ValueRange{});
+
+  unsigned rank = inTy.getRank();
+  auto identity = builder.getMultiDimIdentityMap(rank);
+  SmallVector<utils::IteratorType> iterators(rank,
+                                             utils::IteratorType::parallel);
+
+  return linalg::GenericOp::create(
+             builder, loc, outTy, ValueRange{input}, ValueRange{init},
+             ArrayRef<AffineMap>{identity, identity}, iterators,
+             [&](OpBuilder &nestedBuilder, Location nestedLoc,
+                 ValueRange blockArgs) {
+               Value casted;
+               if (extend)
+                 casted = arith::ExtFOp::create(nestedBuilder, loc,
+                                                dstElementType, blockArgs[0]);
+               else
+                 casted = arith::TruncFOp::create(nestedBuilder, loc,
+                                                  dstElementType, blockArgs[0]);
+               linalg::YieldOp::create(nestedBuilder, loc, ValueRange{casted});
+             })
+      .getResult(0);
 }
 
 SmallVector<Value> MLIRGenerator::computeScalingFactor(Value input) {
@@ -1084,6 +1145,11 @@ Value MLIRGenerator::lowerBiasAdd(Value input, Value bias, Value output) {
                   ValueRange blockArgs) {
                 auto arg0 = blockArgs[0];
                 auto arg1 = blockArgs[1];
+                // The accumulator may be wider than the bias (e.g. f32 vs
+                // bf16); extend the bias to the accumulator type before adding.
+                if (arg0.getType() != arg1.getType())
+                  arg0 = arith::ExtFOp::create(nestedBuilder, loc,
+                                               arg1.getType(), arg0);
                 auto add = arith::AddFOp::create(nestedBuilder, loc, arg0, arg1);
                 linalg::YieldOp::create(nestedBuilder, loc, ValueRange{add});
               })
@@ -1099,6 +1165,14 @@ Value MLIRGenerator::lowerNamedBiasAdd(Value input, Value bias, Value output) {
 
   auto outTy = cast<ShapedType>(input.getType());
   auto biasTy = cast<ShapedType>(bias.getType());
+
+  // The accumulator may be wider than the bias (e.g. f32 vs bf16). Extend the
+  // bias to the accumulator element type so the named ops are well-typed.
+  if (biasTy.getElementType() != outTy.getElementType()) {
+    bias = castTensorElementType(bias, outTy.getElementType());
+    biasTy = cast<ShapedType>(bias.getType());
+  }
+
   Value emptyTensor = tensor::EmptyOp::create(builder, loc, outTy, ValueRange{});
   SmallVector<int64_t> addedDimensions;
   SmallVector<bool> dimsNeeded =
@@ -1111,7 +1185,7 @@ Value MLIRGenerator::lowerNamedBiasAdd(Value input, Value bias, Value output) {
   Value broadcast =
       linalg::BroadcastOp::create(builder, loc, bias, emptyTensor, addedDimensions)
           .getResult()[0];
-  Value biasAdd = linalg::AddOp::create(builder, loc, TypeRange{output.getType()},
+  Value biasAdd = linalg::AddOp::create(builder, loc, TypeRange{outTy},
                                              ValueRange{broadcast, input},
                                              ValueRange{emptyTensor})
                       .getResult(0);
@@ -1130,7 +1204,7 @@ Value MLIRGenerator::lowerNamedRelu(Value input, Value output) {
   Value emptyTensor = tensor::EmptyOp::create(builder, loc, outTy, ValueRange{});
   auto fill =
       linalg::FillOp::create(builder, loc, zero, emptyTensor)->getResult(0);
-  Value relu = linalg::MaxOp::create(builder, loc, TypeRange{output.getType()},
+  Value relu = linalg::MaxOp::create(builder, loc, TypeRange{outTy},
                                  ValueRange{input, fill}, ValueRange{emptyTensor})
           .getResult(0);
 
@@ -1142,8 +1216,9 @@ Value MLIRGenerator::lowerRelu(Value input, Value output) {
   if (!enableRelu)
     return input;
 
-  auto zero = getConstFloat(builder, 0.0, cast<FloatType>(dataTypes[0]));
   auto outTy = cast<ShapedType>(input.getType());
+  auto zero =
+      getConstFloat(builder, 0.0, cast<FloatType>(outTy.getElementType()));
   auto map = getMap(input, MAP_PARALLEL);
   auto relu =
       linalg::GenericOp::create(builder, 

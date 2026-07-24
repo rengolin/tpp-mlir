@@ -69,6 +69,10 @@ class MLIRGenerator {
   /// Tensor init type
   TensorInitType initType;
 
+  /// Downcast type
+  enum class DowncastType { None, AfterMatmul, AfterElementwise };
+  DowncastType downcast = DowncastType::None;
+
   // ============================ Code Generation Options
 
   /// Lower bias add on every layer
@@ -204,6 +208,10 @@ class MLIRGenerator {
   /// Creates a linalg.generic that downcasts (truncates) a wider float
   /// accumulator (e.g. f32) into a narrower float output type (e.g. bf16).
   Value lowerDowncast(Value, Value);
+
+  /// Creates a linalg.generic that casts (extends or truncates) a tensor's
+  /// float element type to another float element type.
+  Value castTensorElementType(Value input, Type dstElementType);
 
   /// Computes scaling factor for the given input. Returns the scaling factor of
   /// same shape as input.
