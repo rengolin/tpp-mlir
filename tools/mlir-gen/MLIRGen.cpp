@@ -87,7 +87,7 @@ static Value createExpandedScaleTensor(OpBuilder &builder, Location loc,
   return scale;
 }
 
-static Value createCastToType(OpBuilder &builder, Location loc, Value value,
+static Value createCastToFloat(OpBuilder &builder, Location loc, Value value,
                               mlir::Type dstType,
                               arith::FastMathFlagsAttr fmf = nullptr) {
   assert(dstType.isFloat() && "Unsupported target type for cast");
@@ -116,15 +116,15 @@ static Value createCastToType(OpBuilder &builder, Location loc, Value value,
 
 MLIRGenerator::MLIRGenerator(StringRef outputOpKindStr, StringRef kernelStr,
                              unsigned batch, StringRef layersStr,
-                             StringRef tilesStr, StringRef registerUnrollStr, StringRef targetType,
+                             StringRef tilesStr, StringRef registerUnrollStr, StringRef dataType,
                              StringRef scaleType, StringRef quantizationTypeStr,
                              int seed, bool identity, bool enableBias,
                              bool enableRelu, bool enableSoftmax,
-                             bool keepGenericMatmul, int vnniBlockingFactor)
+                             int vnniBlockingFactor)
     : builder(&context), loc(builder.getUnknownLoc()), batch(batch), seed(seed),
       identity(identity), flops(0), enableBias(enableBias),
       enableRelu(enableRelu), enableSoftmax(enableSoftmax),
-      keepGenericMatmul(keepGenericMatmul), vnniFactor(vnniBlockingFactor) {
+      vnniFactor(vnniBlockingFactor) {
 
   // Register all necessary dialects
   context
@@ -141,8 +141,6 @@ MLIRGenerator::MLIRGenerator(StringRef outputOpKindStr, StringRef kernelStr,
           .CaseLower("named", OutputOpKind::NamedOp)
           .Default(std::nullopt);
   assert(optOutputOpKind && "Invalid output Op kind");
-  assert(!(optOutputOpKind == OutputOpKind::Contract && keepGenericMatmul) &&
-         "Can't keep generic matmul with contract");
   outputOpKind = *optOutputOpKind;
 
   // Parse kernel type
@@ -160,18 +158,17 @@ MLIRGenerator::MLIRGenerator(StringRef outputOpKindStr, StringRef kernelStr,
   parseStringList(layersStr, layers);
   assert(layers.size() >= 2 && "Must have at least input/output layers");
 
-  // Parse tile sizes
+  // Parse matmul tile / unroll sizes
   parseStringList(tilesStr, tiles);
   assert((tiles.size() == 0 || tiles.size() == 3) &&
          "Must have 3 tile sizes (or none)");
-
   parseStringList(registerUnrollStr, registerUnroll);
-  assert((tiles.size() == 0 || tiles.size() == 3) &&
+  assert((registerUnroll.size() == 0 || registerUnroll.size() == 3) &&
          "Must have 3 register unrolling or none");
 
-  // Pick data type
+  // Pick data types
   auto elementType =
-      llvm::StringSwitch<std::optional<SmallVector<mlir::Type>>>(targetType)
+      llvm::StringSwitch<std::optional<SmallVector<mlir::Type>>>(dataType)
           .CaseLower("f32", SmallVector<Type>{builder.getF32Type(),
                                               builder.getF32Type()})
           .CaseLower("f16", SmallVector<Type>{builder.getF16Type(),
@@ -216,7 +213,7 @@ MLIRGenerator::MLIRGenerator(StringRef outputOpKindStr, StringRef kernelStr,
   // If the target type contains "mx", it is a mixed precision type. If
   // quantization type is not explicitly specified, we will default to Mixed
   // quantization type for mixed precision target types.
-  bool hasMixedType = !targetType.empty() && targetType.contains("mx");
+  bool hasMixedType = !dataType.empty() && dataType.contains("mx");
   if (hasMixedType && quantType == QuantizationType::None)
     quantType = QuantizationType::Mixed;
 
@@ -567,7 +564,7 @@ Value MLIRGenerator::lowerNamedMatmul(Value input, Value weight, Value output) {
   // tensor had been discussed and can be revisited as potential solution.
   if (vnniFactor != 0) {
     llvm_unreachable(
-        "Unsupported Lowering for VNNI, Try '--keep-generic-matmul'");
+        "Unsupported Lowering for VNNI, Try 'generic' or 'contract' lowering");
   }
 
   Value namedMatmul;
@@ -645,7 +642,7 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
                                                   reassociationIndices);
   }
 
-  if (outputOpKind == OutputOpKind::Generic || keepGenericMatmul) {
+  if (outputOpKind == OutputOpKind::Generic) {
     chain = lowerGenericMatmul(input, weight, output);
   } else if (outputOpKind == OutputOpKind::Contract) {
     chain = lowerContract(input, weight, output);
@@ -1007,15 +1004,15 @@ Value MLIRGenerator::dequantizeGemm(LayerArgs &args, Value chain) {
                                            ? arith::FastMathFlags::nnan
                                            : arith::FastMathFlags::none;
             arg1 =
-                createCastToType(nestedBuilder, nestedLoc, arg1, floatTy,
+                createCastToFloat(nestedBuilder, nestedLoc, arg1, floatTy,
                                  arith::FastMathFlagsAttr::get(&context, fmf));
             arg2 =
-                createCastToType(nestedBuilder, nestedLoc, arg2, floatTy,
+                createCastToFloat(nestedBuilder, nestedLoc, arg2, floatTy,
                                  arith::FastMathFlagsAttr::get(&context, fmf));
             Value alu = arith::MulFOp::create(nestedBuilder, loc, arg1, arg2)
                             ->getResult(0);
             Value castToFloat =
-                createCastToType(nestedBuilder, nestedLoc, arg0,
+                createCastToFloat(nestedBuilder, nestedLoc, arg0,
                                  outputShapedTy.getElementType());
             alu = arith::MulFOp::create(nestedBuilder, loc, castToFloat, alu)
                       ->getResult(0);

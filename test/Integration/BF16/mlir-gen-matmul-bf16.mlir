@@ -1,9 +1,8 @@
-// RUN: mlir-gen --kernel=args --seed=0 --float-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=0 2>&1 | FileCheck %s --check-prefix=BF16
-// RUN: mlir-gen --kernel=args --seed=0 --float-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=2 2>&1 | FileCheck %s --check-prefix=DP2
-// RUN: mlir-gen --kernel=args --seed=0 --float-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=4 2>&1 | FileCheck %s --check-prefix=DP4
+// RUN: mlir-gen --kernel=args --seed=0 --data-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=0 2>&1 | FileCheck %s --check-prefix=BF16
+// RUN: mlir-gen --kernel=args --seed=0 --data-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=2 2>&1 | FileCheck %s --check-prefix=DP2
+// RUN: mlir-gen --kernel=args --seed=0 --data-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=4 2>&1 | FileCheck %s --check-prefix=DP4
 
-// RUN: not --crash mlir-gen --output=named --kernel=args --seed=0 --float-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=2 2>&1 | FileCheck %s --check-prefix=VNNI-TODO
-// RUN: mlir-gen --output=named --keep-generic-matmul --kernel=args --seed=0 --float-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=2 2>&1 | FileCheck %s --check-prefix=GENERIC
+// RUN: not --crash mlir-gen --output=named --kernel=args --seed=0 --data-type=bf16 --batch=128 --layers=2304,768 --tiles=64,48,64 --vnni=2 2>&1 | FileCheck %s --check-prefix=VNNI-TODO
 
 // BF16: // RUN{{.*}}tpp-run %s -n {{\d*}}
 // BF16: // RUN{{.*}}-e entry -entry-point-result=void
@@ -63,5 +62,5 @@
 // GENERIC:           return %[[VAL_3]] : tensor<2x16x64x48xbf16>
 // GENERIC:         }
 
-// VNNI-TODO: Unsupported Lowering for VNNI, Try '--keep-generic-matmul'
+// VNNI-TODO: Unsupported Lowering for VNNI, Try 'generic' or 'contract' lowering
 // VNNI-TODO: UNREACHABLE executed

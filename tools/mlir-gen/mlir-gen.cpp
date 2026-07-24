@@ -36,13 +36,6 @@ llvm::cl::opt<std::string> outputOpKind(
     "output", llvm::cl::desc("Specifies linalg op kind generic, contract or named"),
     llvm::cl::value_desc("generic,contract,named"), llvm::cl::init("generic"));
 
-// Enable emission of generic matmul when outputKind is named op
-llvm::cl::opt<bool> keepGenericMatmul(
-    "keep-generic-matmul",
-    llvm::cl::desc("Enable emission of generic matmul when choosen "
-                   "outputKind is named op"),
-    llvm::cl::value_desc("bool"), llvm::cl::init(false));
-
 // Type of kernel to be generated
 llvm::cl::opt<std::string> kernel("kernel",
                                   llvm::cl::desc("Kernel type to be generated"),
@@ -71,12 +64,9 @@ llvm::cl::opt<std::string>
           llvm::cl::desc("Comma-separated values of size of each tile (N,K,C)"),
           llvm::cl::value_desc("1,1,1"), llvm::cl::init(""));
 
-// Float type flag to indicate input data type. It is being extended to further
-// indicate mixed precision types, source and destination types in case of
-// quantization using 'mx-' prefix. This may be changed further with clarity on
-// quantization ops.
+// Data type for the arguments
 llvm::cl::opt<std::string>
-    floatType("float-type", llvm::cl::desc("Float type and its bitsize"),
+    dataType("data-type", llvm::cl::desc("Data type for arguments"),
               llvm::cl::value_desc(
                   "f32|f16|bf16|mx-bf16|mx-f16|mx-i8|mx-i8-f32|mx-f32-i8"),
               llvm::cl::init("f32"));
@@ -141,8 +131,8 @@ int main(int argc, char **argv) {
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "MLIR Generator");
 
-  MLIRGenerator gen(outputOpKind, kernel, batch, layers, tiles, registerUnroll, floatType,
+  MLIRGenerator gen(outputOpKind, kernel, batch, layers, tiles, registerUnroll, dataType,
                     scaleType, quantizationType, seed, identity, enableBias,
-                    enableRelu, enableSoftmax, keepGenericMatmul, vnni);
-  return gen.generate(filename, floatType.getValue().find("mx-", 0) == 0);
+                    enableRelu, enableSoftmax, vnni);
+  return gen.generate(filename, dataType.getValue().find("mx-", 0) == 0);
 }
