@@ -35,9 +35,11 @@
 // BF16-DAG: #map2 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d3, d4)>
 // BF16:     func.func @entry(%arg0: tensor<2x36x64x64xbf16>, %arg1: tensor<16x36x64x48xbf16>, %arg2: tensor<2x16x64x48xbf16>) -> tensor<2x16x64x48xbf16>
 // BF16-NOT: alloc
-// BF16:     linalg.generic {{.*}}iterator_types = ["parallel", "parallel", "reduction", "parallel", "parallel", "reduction"]
+// BF16:     linalg.generic {{.*}}iterator_types = ["parallel", "parallel", "reduction", "parallel", "parallel", "reduction"]{{.*}}outs({{.*}}tensor<2x16x64x48xf32>)
 // BF16:         arith.mulf
 // BF16:         arith.addf
+// BF16:     linalg.generic {{.*}}iterator_types = ["parallel", "parallel", "parallel", "parallel"]{{.*}}tensor<2x16x64x48xbf16>
+// BF16:         arith.truncf
 // BF16-NOT: dealloc
 
 // FP16: // RUN{{.*}}tpp-run %s -n {{\d*}}

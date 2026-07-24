@@ -201,6 +201,10 @@ class MLIRGenerator {
   /// Creates linalg contract
   Value lowerContract(Value, Value, Value);
 
+  /// Creates a linalg.generic that downcasts (truncates) a wider float
+  /// accumulator (e.g. f32) into a narrower float output type (e.g. bf16).
+  Value lowerDowncast(Value, Value);
+
   /// Computes scaling factor for the given input. Returns the scaling factor of
   /// same shape as input.
   SmallVector<Value> computeScalingFactor(Value input);

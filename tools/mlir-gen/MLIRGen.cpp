@@ -624,6 +624,17 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
     }
   }
 
+  // Plain narrow float types (e.g. bf16) must accumulate the matmul in f32 and
+  // then downcast the result back to the narrow type. Detect this case here so
+  // the matmul below writes into an f32 accumulator.
+  Type outputElementType = outputType.getElementType();
+  bool downcastResult = quantType == QuantizationType::None &&
+                        outputElementType.isBF16();
+  if (downcastResult) {
+    auto f32AccType = RankedTensorType::get(shape, builder.getF32Type());
+    output = getZeroInitTensor(f32AccType);
+  }
+
   if (vnniPacked) {
     SmallVector<int64_t> vnniShape{inputType.getShape()};
     vnniShape.back() = vnniShape.back() / vnniFactor;
@@ -655,6 +666,10 @@ Value MLIRGenerator::lowerMatmul(LayerArgs &args, bool hasMixedType = false) {
   } else if (outputOpKind == OutputOpKind::NamedOp) {
     chain = lowerNamedMatmul(input, weight, output);
   }
+
+  // Downcast the f32 accumulator back to the narrow output type (e.g. bf16).
+  if (downcastResult)
+    chain = lowerDowncast(chain, args.output.value);
 
   computeMatmulFlops(inputType, outputType);
   return chain;
@@ -733,6 +748,28 @@ Value MLIRGenerator::lowerContract(Value input, Value weight, Value output) {
                       .getResult(0);
 
   return contract;
+}
+
+Value MLIRGenerator::lowerDowncast(Value input, Value output) {
+  // Truncate a wider float accumulator (e.g. f32) into the narrower output
+  // element type (e.g. bf16) using a linalg.generic with arith.truncf.
+  auto outputElementType =
+      cast<ShapedType>(output.getType()).getElementType();
+  auto map = getMap(input, MAP_PARALLEL);
+  auto downcast =
+      linalg::GenericOp::create(builder, 
+              loc, output.getType(), ValueRange{input}, ValueRange{output},
+              ArrayRef<AffineMap>{map, getMap(output, MAP_PARALLEL)},
+              getIterators(MAP_PARALLEL),
+              [&](OpBuilder &nestedBuilder, Location nestedLoc,
+                  ValueRange blockArgs) {
+                auto trunc = arith::TruncFOp::create(
+                    nestedBuilder, loc, outputElementType, blockArgs[0]);
+                linalg::YieldOp::create(nestedBuilder, loc, ValueRange{trunc});
+              })
+          .getResult(0);
+
+  return downcast;
 }
 
 SmallVector<Value> MLIRGenerator::computeScalingFactor(Value input) {
