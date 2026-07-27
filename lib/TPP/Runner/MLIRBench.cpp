@@ -396,7 +396,80 @@ void MLIRBench::printMean(Value mean) {
 void MLIRBench::printVector(Value vector) {
   auto op = vector;
   auto vectorValue = dyn_cast<VectorType>(vector.getType());
-  if (vectorValue.getElementType().isBF16()) {
+  auto elemType = vectorValue.getElementType();
+  // vector.print does not support low-precision types; up-cast to f32.
+  if (llvm::isa<Float8E5M2Type, Float8E4M3FNType>(elemType)) {
+    // FP8 (E5M2/E4M3) has no native arithmetic on the target, so we cannot use
+    // arith.extf here. Convert each lane to f32 using the libxsmm converters
+    // exposed by the runtime (E5M2 = BF8, E4M3 = HF8).
+    StringRef fnName = llvm::isa<Float8E5M2Type>(elemType)
+                           ? "xsmm_convert_bf8_to_f32"
+                           : "xsmm_convert_hf8_to_f32";
+    Type i8Type = builder.getI8Type();
+    Type f32Type = builder.getF32Type();
+    // Declare the runtime converter once at module scope.
+    auto fnDecl = dyn_cast_or_null<func::FuncOp>(module.lookupSymbol(fnName));
+    if (!fnDecl) {
+      OpBuilder::InsertionGuard g(builder);
+      builder.setInsertionPointToStart(&getModuleBlock());
+      auto fnType = builder.getFunctionType({i8Type}, {f32Type});
+      fnDecl = func::FuncOp::create(builder, unkLoc, fnName, fnType);
+      fnDecl.setPrivate();
+    }
+    auto shape = vectorValue.getShape();
+    int64_t numElems = vectorValue.getNumElements();
+    auto i8VecType = VectorType::get(shape, i8Type);
+    Value i8Vec = arith::BitcastOp::create(builder, unkLoc, i8VecType, vector);
+    auto f32VecType = VectorType::get(shape, f32Type);
+
+    // Convert one FP8 lane at position `idx` of `i8Vec` to f32 and insert it
+    // into `f32Vec`, returning the updated accumulator vector.
+    auto convertLane = [&](Value f32Vec, OpFoldResult idx) -> Value {
+      Value lane = vector::ExtractOp::create(builder, unkLoc, i8Vec,
+                                             ArrayRef<OpFoldResult>{idx});
+      Value converted =
+          func::CallOp::create(builder, unkLoc, fnDecl, ValueRange{lane})
+              .getResult(0);
+      return vector::InsertOp::create(builder, unkLoc, converted, f32Vec,
+                                      ArrayRef<OpFoldResult>{idx});
+    };
+
+    // Emitting one extract/call/insert per lane fully unrolled at compile time
+    // would explode the IR for large vectors. Instead emit an scf.for loop
+    // blocked by `unrollFactor`: the outer loop iterates over blocks of
+    // `unrollFactor` lanes (unrolled here in the loop body), and a
+    // compile-time-unrolled tail handles the leftover lanes. This keeps the
+    // generated IR size bounded regardless of the vector length.
+    constexpr int64_t unrollFactor = 128;
+    Value f32Vec = arith::ConstantOp::create(
+        builder, unkLoc, builder.getZeroAttr(f32VecType));
+    int64_t numBlocks = numElems / unrollFactor;
+    if (numBlocks > 0) {
+      auto lb = getConstIndex(builder, 0);
+      auto ub = getConstIndex(builder, numBlocks * unrollFactor);
+      auto step = getConstIndex(builder, unrollFactor);
+      auto loop = scf::ForOp::create(builder, unkLoc, lb, ub, step,
+                                     ValueRange{f32Vec});
+      {
+        OpBuilder::InsertionGuard g(builder);
+        builder.setInsertionPointToStart(loop.getBody());
+        Value iv = loop.getInductionVar();
+        Value acc = loop.getRegionIterArg(0);
+        for (int64_t k = 0; k < unrollFactor; k++) {
+          Value idx = k == 0 ? iv
+                             : arith::AddIOp::create(builder, unkLoc, iv,
+                                                     getConstIndex(builder, k));
+          acc = convertLane(acc, idx);
+        }
+        scf::YieldOp::create(builder, unkLoc, ValueRange{acc});
+      }
+      f32Vec = loop.getResult(0);
+    }
+    // Compile-time-unrolled tail for the remaining (< unrollFactor) lanes.
+    for (int64_t i = numBlocks * unrollFactor; i < numElems; i++)
+      f32Vec = convertLane(f32Vec, builder.getIndexAttr(i));
+    op = f32Vec;
+  } else if (elemType.isBF16()) {
     VectorType vecType =
         VectorType::get(vectorValue.getShape(), builder.getF32Type());
     op = arith::ExtFOp::create(builder, unkLoc, vecType, vector, arith::FastMathFlagsAttr{});
