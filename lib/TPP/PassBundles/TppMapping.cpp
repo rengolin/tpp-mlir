@@ -57,7 +57,14 @@ private:
     pm.addPass(createCleanup());
 
     // Convert ops to packed layouts.
+    // Pack Matmul only operates on named ops.
+    LinalgMorphOpsPassOptions options;
+    options.genericToNamed = true;
+    pm.addPass(createLinalgMorphOpsPass(options));
     pm.addPass(createPackMatmul());
+    options.genericToNamed = false;
+    options.namedToGeneric = true;
+    pm.addPass(createLinalgMorphOpsPass(options));
 
     if (!disableVnniPacking) {
       pm.addPass(createPackVNNI());
