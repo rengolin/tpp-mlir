@@ -121,6 +121,13 @@
       "environment": {},
       "flags": [ "-n", "100", "-run-args='--disable-vnni-packing --nano-kernels --gemm-unroll=1,8,1 --registerBlocking=2,32,1'" ],
       "extensions": [ "arl" ]
+    },
+    "mlir_gemm_bf16_dp4_sve": {
+      "type": "IR-GEN",
+      "benchmark": [ "mlir-gen", "--kernel=const --data-type=bf16 --batch=512 --layers=1024,1024,1024,1024 --tiles=32,32,32 --vnni=4" ],
+      "environment": {},
+      "flags": [ "-n", "100" ],
+      "extensions": [ "svebf16" ]
     }
   }},
   {
@@ -166,6 +173,13 @@
       "environment": {},
       "flags": [ "-n", "100", "-run-args='--disable-vnni-packing --nano-kernels --gemm-unroll=1,16,2 --registerBlocking=8,32,2'" ],
       "extensions": [ "avx512_bf16" ]
+    },
+    "mlir_mlp_bf16_dp4_sve": {
+      "type": "IR-GEN",
+      "benchmark": [ "mlir-gen", "--kernel=const --bias --relu --data-type=bf16 --batch=512 --layers=1024,1024,1024,1024 --tiles=32,32,32 --vnni=4" ],
+      "environment": {},
+      "flags": [ "-n", "100" ],
+      "extensions": [ "svebf16" ]
     }
   }},
   {
