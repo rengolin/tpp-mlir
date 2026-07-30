@@ -47,6 +47,11 @@ static SmallVector<Type> extractInvokeOperandTypes(OpBuilder &builder,
       Type basePtrType = LLVM::LLVMPointerType::get(builder.getContext());
       results.push_back(basePtrType);
       results.push_back(builder.getIndexType()); // offset
+    } else if (isa<FloatType>(operandType) && !operandType.isF32()) {
+      // Scalar float operands (e.g. the unary scalar input) are always passed
+      // as f32 to the runtime regardless of the XSMM data type.
+      // FIXME: This is not correct, but works because the only F32 argument is unary_scalar.
+      results.push_back(builder.getF32Type());
     } else {
       results.push_back(operand.getType());
     }
@@ -67,6 +72,18 @@ static SmallVector<Value> getOperands(OpBuilder &builder, Location loc,
   for (Value operand : operands) {
     auto memrefType = dyn_cast<MemRefType>(operand.getType());
     if (!memrefType) {
+      // Scalar float operands (e.g. the unary scalar input) are always passed
+      // as f32 to the runtime regardless of the XSMM data type.
+      // FIXME: This is not correct, but works because the only F32 argument is unary_scalar.
+      if (auto floatTy = dyn_cast<FloatType>(operand.getType())) {
+        if (floatTy.getWidth() < 32) {
+          operand = arith::ExtFOp::create(builder, loc, builder.getF32Type(),
+                                          operand);
+        } else if (floatTy.getWidth() > 32) {
+          operand = arith::TruncFOp::create(builder, loc, builder.getF32Type(),
+                                            operand);
+        }
+      }
       res.push_back(operand);
       continue;
     }
