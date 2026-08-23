@@ -103,6 +103,10 @@ private:
     pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
     pm.addNestedPass<func::FuncOp>(createLoopInvariantCodeMotionPass());
     pm.addPass(createBufferize());
+    // Replicate benchmark kernel arguments for cold-cache timing. Runs on
+    // bufferized memrefs so replicas are plain subviews (no allocs/copies).
+    // No-op unless the benchmark producer requested replication.
+    pm.addPass(createReplicateBenchArgs());
     pm.addNestedPass<func::FuncOp>(createVectorContractToNanoKernels());
     pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
     pm.addNestedPass<func::FuncOp>(createFlattenVectorOps());
@@ -138,13 +142,13 @@ private:
       pm.addPass(createSCFForAllLoopFlattenSFC());
 
     // Bufferize: tensor->memref.
-    if (!nanoKernel)
-      pm.addPass(createBufferize());
-
     // Replicate benchmark kernel arguments for cold-cache timing. Runs on
     // bufferized memrefs so replicas are plain subviews (no allocs/copies).
     // No-op unless the benchmark producer requested replication.
-    pm.addPass(createReplicateBenchArgs());
+    if (!nanoKernel) {
+      pm.addPass(createBufferize());
+      pm.addPass(createReplicateBenchArgs());
+    }
 
     if (nanoKernel)
       // Lower Linalg to Vector.
