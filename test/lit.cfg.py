@@ -73,8 +73,10 @@ llvm_config.add_tool_substitutions(tools, tool_dirs)
 import shutil
 
 lighthouse_dir = os.path.join(config.tpp_src_root, "third_party", "lighthouse")
-uv_path = shutil.which("uv")
-if uv_path and os.path.exists(os.path.join(lighthouse_dir, "pyproject.toml")):
+uv_path = getattr(config, "uv_executable", "") or shutil.which("uv")
+if uv_path and os.path.exists(uv_path) and os.path.exists(
+    os.path.join(lighthouse_dir, "pyproject.toml")
+):
     config.available_features.add("lighthouse")
     import_script = os.path.join(config.tpp_src_root, "tools", "pytorch", "import.py")
     config.substitutions.append(

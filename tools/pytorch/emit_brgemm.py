@@ -328,7 +328,15 @@ def main(argv=None):
         args.alpha, args.beta,
         args.compType,
     )
-    text = str(module)
+    # Embed the benchmark with FLOPS count so that the tpp-mlir benchmarking
+    # infra is re-used.
+    total_flops = 2 * args.br_count * args.M * args.N * args.K
+    header = (
+        "// RUN: tpp-run %s -n 10 \\\n"
+        "// RUN:  -e entry -entry-point-result=void\n"
+        f"// BENCH_TOTAL_FLOPS: {total_flops}\n"
+    )
+    text = header + str(module)
     if getattr(args, "output", None):
         with open(args.output, "w") as f:
             f.write(text)
